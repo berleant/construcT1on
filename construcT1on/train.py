@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.3
+#!/usr/bin/env python2
 """ Dream up T1 nifti images. Heavily modified from
 https://github.com/bamos/dcgan-completion.tensorflow """
 
