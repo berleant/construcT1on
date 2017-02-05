@@ -9,16 +9,16 @@ import numpy as np
 import tensorflow as tf
 from six.moves import xrange
 
-from construcT1on import ops
-from construcT1on import imageio
+import ops
+import imageio
 
 class T1Generator(object):
 
-    self.INPUT_CONST = 100 # temp
-    self.SAVE_VISUALS_EXP = 1.2
-    self.VISUALS_DIM = [8, 8]
-    self.CHECKPOINT_EPOCHS = 100
-    self.STARTING_GF_DIM = 32
+    INPUT_CONST = 100 # temp
+    SAVE_VISUALS_EXP = 1.2
+    VISUALS_DIM = [8, 8]
+    CHECKPOINT_EPOCHS = 100
+    STARTING_GF_DIM = 32
 
     def __init__(self, sess, image_side_length=128, n_channels=1, batch_size=64,
                  checkpoint_dir='checkpoint', log_dir='log', visuals_dir='visuals'):
@@ -33,15 +33,15 @@ class T1Generator(object):
         self.batch_size = batch_size
         self.image_dims = (image_side_length, image_side_length, n_channels)
 
-        assert image_shape[0] == image_shape[1] # for now they have to be squares
-        self.starting_img_dim = image_shape[0] / 4 # 4 = 2^(number of conv layers - 1)
-        if isinstance(self.starting_img_dim, int):
+
+        self.starting_img_dim = image_side_length / 4 # 4 = 2^(number of conv layers - 1)
+        if np.isclose(self.starting_img_dim, int(self.starting_img_dim)):
+            self.starting_img_dim = int(self.starting_img_dim)
+        else:
             raise Exception("Bad dimension. Haven't figured out how or if to deal with this.")
 
-        assert self.starting_img_dim is int
-
         self.n_channels = n_channels
-        self.imread_mode = 'L' if c_dim == 1 else None # not implemented
+        self.imread_mode = 'L' if self.n_channels == 1 else None # not implemented
 
         # batch normalization : deals with poor initialization helps gradient flow
         self.g_bn0 = ops.batch_norm(name='g_bn0')
@@ -131,13 +131,6 @@ class T1Generator(object):
             epoch += 1
 
     def generator(self, z):
-        def define_constant(dividend, divisor):
-            # making sure the constants are ints
-            quotient = int(dividend / divisor)
-            if abs(quotient - dividend / divisor) / 2 > .2:
-                raise Exception("Bad dimension. Haven't figured out how or if to deal with this.")
-            return quotient
-
         self.z_, self.h0_w, self.h0_b = ops.linear(
             z, self.starting_img_dim * self.starting_img_dim * self.STARTING_GF_DIM, 'g_h0_lin',
             with_w=True)
@@ -155,7 +148,8 @@ class T1Generator(object):
 
         h2, self.h2_w, self.h2_b = ops.conv2d_transpose(
             h1,
-            [self.batch_size, self.starting_img_dim * 4, self.starting_img_dim * 4, self.c_dim],
+            [self.batch_size, self.starting_img_dim * 4,
+             self.starting_img_dim * 4, self.n_channels],
             name='g_h2', with_w=True)
 
         return tf.nn.tanh(h2)
@@ -179,7 +173,9 @@ class T1Generator(object):
         h1 = tf.nn.relu(self.g_bn1(h1, train=False))
 
         h2 = ops.conv2d_transpose(
-            h1, [self.batch_size, self.starting_img_dim * 4, self.starting_img_dim * 4, self.c_dim],
+            h1,
+            [self.batch_size, self.starting_img_dim * 4,
+             self.starting_img_dim * 4, self.n_channels],
             name='g_h2')
 
         return tf.nn.tanh(h4)
