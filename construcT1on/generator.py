@@ -31,8 +31,7 @@ class T1Generator(object):
         """
         self.sess = sess
         self.batch_size = batch_size
-        self.image_dims = (image_side_length, image_side_length, n_channels)
-
+        self.image_dims = [image_side_length, image_side_length, n_channels]
 
         self.starting_img_dim = image_side_length / 4 # 4 = 2^(number of conv layers - 1)
         if np.isclose(self.starting_img_dim, int(self.starting_img_dim)):
@@ -62,17 +61,18 @@ class T1Generator(object):
         self.z = tf.placeholder(tf.float32, [None, self.INPUT_CONST], name='z') # temporary
         self.z_sum = tf.histogram_summary("z", self.z)
 
-        self.G = self.generator(self.z)
+        self.G, tmp_something = self.generator(self.z)
         self.sampler = self.sampler(self.z)
 
         self.G_sum = tf.image_summary("G", self.G)
 
         self.g_loss = tf.reduce_mean( # see how FSL does it; normalized least squares
-            )
+            tf.nn.sigmoid_cross_entropy_with_logits(tmp_something, # arbitrary function
+                                                    tf.ones_like(self.G)))
 
         self.g_loss_sum = tf.scalar_summary("g_loss", self.g_loss)
 
-        g_vars = tf.trainable_variables()
+        self.g_vars = tf.trainable_variables()
 
         self.saver = tf.train.Saver(max_to_keep=1)
 
@@ -103,9 +103,9 @@ class T1Generator(object):
             n_batches = len(data_files) // self.batch_size
             for batch in xrange(n_batches):
                 batch_files = data_files[batch * self.batch_size:(batch + 1) * self.batch_size]
-                batch = [imageio.get_nifti_image(batch_file, self.image_dims)
+                batch_data = [imageio.get_nifti_image(batch_file, self.image_dims[0])
                          for batch_file in batch_files]
-                batch_images = np.array(batch).astype(np.float32)
+                batch_images = np.array(batch_data).astype(np.float32)
 
                 batch_z_seeds = self._seeder()
 
@@ -114,7 +114,7 @@ class T1Generator(object):
                                                feed_dict={self.z: batch_z_seeds})
                 self.writer.add_summary(summary_str, epoch)
 
-                errG = self.g_loss.eval({self.z: batch_z})
+                errG = self.g_loss.eval({self.z: batch_z_seeds})
 
                 print("Epoch: [%2d] [%4d/%4d] time: %4.4f, g_loss: %.8f"
                       % (epoch, batch + 1, n_batches, time.time() - start_time, errG))
@@ -122,13 +122,14 @@ class T1Generator(object):
                 if np.power(self.SAVE_VISUALS_EXP, n_visuals) <= epoch:
                     # save visuals in the visuals dir at an ever-decreasing rate
                     n_visuals += 1
-                    images = self.sess.run([self.sampler], feed_dict={self.z: self.z_seeds})
+                    images = self.sess.run(self.sampler, feed_dict={self.z: self.z_seeds})
                     imageio.save_nifti_images(
                         images, self.VISUALS_DIM, os.path.join(
                             self.visuals_dir, 'train_{:02d}_{:04d}.png'.format(epoch, batch)))
                 if np.mod(epoch, self.CHECKPOINT_EPOCHS) == 0:
                     self.save(counter)
             epoch += 1
+        print("Training complete.")
 
     def generator(self, z):
         self.z_, self.h0_w, self.h0_b = ops.linear(
@@ -152,7 +153,7 @@ class T1Generator(object):
              self.starting_img_dim * 4, self.n_channels],
             name='g_h2', with_w=True)
 
-        return tf.nn.tanh(h2)
+        return tf.nn.tanh(h2), h2
 
     def sampler(self, z, y=None):
         ''' cannot be called before generator
@@ -178,7 +179,7 @@ class T1Generator(object):
              self.starting_img_dim * 4, self.n_channels],
             name='g_h2')
 
-        return tf.nn.tanh(h4)
+        return tf.nn.tanh(h2)
 
     def save(self, counter):
         self.saver.save(

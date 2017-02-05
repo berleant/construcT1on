@@ -43,7 +43,6 @@ def fit_range(array):
 
     post_max = np.amax(array)
     post_min = np.amin(array)
-    print('maxmin', post_max, post_min)
     epsilon = 0.01
     assert np.absolute(1 - post_max) < epsilon
     assert np.absolute(1 + post_min) < epsilon
