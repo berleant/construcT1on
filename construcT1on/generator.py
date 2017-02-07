@@ -4,10 +4,10 @@ from __future__ import division
 import os
 import time
 from glob import glob
+from six.moves import xrange
+import tensorflow as tf
 
 import numpy as np
-import tensorflow as tf
-from six.moves import xrange
 
 import ops
 import imageio
@@ -42,6 +42,10 @@ class T1Generator(object):
         self.n_channels = n_channels
         self.imread_mode = 'L' if self.n_channels == 1 else None # not implemented
 
+        self.mni_slice = imageio.get_nifti_image(
+            '/home/berleant/dcgan-completion.tensorflow/data/neuro/copy0.nii.gz',
+            image_side_length)
+
         # batch normalization : deals with poor initialization helps gradient flow
         self.g_bn0 = ops.batch_norm(name='g_bn0')
         self.g_bn1 = ops.batch_norm(name='g_bn1')
@@ -61,14 +65,12 @@ class T1Generator(object):
         self.z = tf.placeholder(tf.float32, [None, self.INPUT_CONST], name='z') # temporary
         self.z_sum = tf.histogram_summary("z", self.z)
 
-        self.G, tmp_something = self.generator(self.z)
+        self.G = self.generator(self.z)
         self.sampler = self.sampler(self.z)
 
         self.G_sum = tf.image_summary("G", self.G)
 
-        self.g_loss = tf.reduce_mean( # see how FSL does it; normalized least squares
-            tf.nn.sigmoid_cross_entropy_with_logits(tmp_something, # arbitrary function
-                                                    tf.ones_like(self.G)))
+        self.g_loss = tf.reduce_sum(tf.squared_difference(self.G, self.mni_slice))
 
         self.g_loss_sum = tf.scalar_summary("g_loss", self.g_loss)
 
@@ -153,7 +155,7 @@ class T1Generator(object):
              self.starting_img_dim * 4, self.n_channels],
             name='g_h2', with_w=True)
 
-        return tf.nn.tanh(h2), h2
+        return tf.nn.tanh(h2)
 
     def sampler(self, z, y=None):
         ''' cannot be called before generator

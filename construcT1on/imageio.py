@@ -21,6 +21,7 @@ def get_nifti_image(image_path, image_size):
         return pad, pad
 
     image_array = nb.load(image_path).get_data()[:, :, 50]
+    assert image_array.ndim == 2
     length, width = image_array.shape
 
     length_pads = get_pad_width(length)
