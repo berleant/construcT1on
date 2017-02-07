@@ -1,11 +1,34 @@
 ''' Utilities for saving and reading niftis and pngs '''
 from __future__ import division
+import os
+import glob
+import random
 
 import scipy.misc
 import numpy as np
 
 import nibabel as nb
 from nilearn import plotting
+
+# os.path.join(data_dir, subj, *_PATH) is the full path to any particular nifti(s)
+T1_PATH = "MNINonLinear/T1w_restore.2.nii.gz"
+EPI_BASE_PATH = "MNINonLinear/Results/*fMRI*/*fMRI*" # add LR/RL.nii.gz to the end
+
+def get_t1_epi_files(data_dir):
+    ''' get HCP data from data_dir and return a dictionary of with keys being T1 file paths and
+    values being a list of the corresponding EPIs. '''
+    t1_epi_files = {}
+    for directory in subject_dirs:
+        t1_filename = os.path.join(directory, T1_PATH)
+
+        epi_filenames = []
+        for direction in ['LR', 'RL']:
+            epi_filenames = epi_filenames + glob.glob(
+                os.path.join(directory, EPI_BASE_PATH + direction + '.nii.gz'))
+
+        t1_epi_files[t1_filename] = epi_filenames
+
+    return t1_epi_files
 
 def get_nifti_image(image_path, image_size):
     ''' Given '.nii' file, return an arbitrary 2D slice, shape (image_size, image_size, 1) '''
@@ -20,7 +43,8 @@ def get_nifti_image(image_path, image_size):
             return pad, pad + 1
         return pad, pad
 
-    image_array = nb.load(image_path).get_data()[:, :, 50]
+    data = nb.load(image_path).get_data()
+    image_array = data[:, :, 50] if data.ndim == 3 else data[:, :, 50, 0]
     assert image_array.ndim == 2
     length, width = image_array.shape
 
@@ -30,7 +54,6 @@ def get_nifti_image(image_path, image_size):
     image_array = np.pad(image_array, (length_pads, width_pads), 'constant', constant_values=0)
     image_array = as_3d(fit_range(image_array))
 
-    save_nifti_image(image_array, '/home/berleant/trainingimg.png')
     return image_array
 
 def fit_range(array):

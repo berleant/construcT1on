@@ -3,7 +3,6 @@
 from __future__ import division
 import os
 import time
-from glob import glob
 from six.moves import xrange
 import tensorflow as tf
 
@@ -14,26 +13,26 @@ import imageio
 
 class T1Generator(object):
 
-    INPUT_CONST = 100 # temp
+    EPI_DIMS = [128, 128, 1] # powers of two are easier but they're actually [91, 109, 91]
     SAVE_VISUALS_EXP = 1.2
     VISUALS_DIM = [8, 8]
     CHECKPOINT_EPOCHS = 100
     STARTING_GF_DIM = 32
 
-    def __init__(self, sess, image_side_length=128, n_channels=1, batch_size=64,
+    def __init__(self, sess, t1_side_length=128, n_channels=1, batch_size=64,
                  checkpoint_dir='checkpoint', log_dir='log', visuals_dir='visuals'):
         """
         Args:
             sess: TensorFlow session
-            image_side_length: the length of one side of the (2D) image
+            t1_side_length: the length of one side of the (2D) image
             n_channels: The number of information channels ("colors") in the image.
             batch_size: The size of batch. Should be specified before training.
         """
         self.sess = sess
         self.batch_size = batch_size
-        self.image_dims = [image_side_length, image_side_length, n_channels]
+        self.t1_dims = [t1_side_length, t1_side_length, n_channels]
 
-        self.starting_img_dim = image_side_length / 4 # 4 = 2^(number of conv layers - 1)
+        self.starting_img_dim = t1_side_length / 4 # 4 = 2^(number of conv layers - 1)
         if np.isclose(self.starting_img_dim, int(self.starting_img_dim)):
             self.starting_img_dim = int(self.starting_img_dim)
         else:
@@ -44,7 +43,7 @@ class T1Generator(object):
 
         self.mni_slice = imageio.get_nifti_image(
             '/home/berleant/dcgan-completion.tensorflow/data/neuro/copy0.nii.gz',
-            image_side_length)
+            t1_side_length)
 
         # batch normalization : deals with poor initialization helps gradient flow
         self.g_bn0 = ops.batch_norm(name='g_bn0')
@@ -58,11 +57,10 @@ class T1Generator(object):
         self.model_name = "T1Generator.model"
 
     def build_model(self):
-        self.images = tf.placeholder(
-            tf.float32, [None] + self.image_dims, name='real_images')
-        # self.sample_images = tf.placeholder( # is this being used for anything?
-        #    tf.float32, [None] + self.image_dims, name='sample_images')
-        self.z = tf.placeholder(tf.float32, [None, self.INPUT_CONST], name='z') # temporary
+        self.t1s = tf.placeholder(
+            tf.float32, [None] + self.t1_dims, name='t1_images')
+        # Assuming all EPIs in HCP have same spatial dimensions
+        self.z = tf.placeholder(tf.float32, [None] + self.EPI_DIMS, name='z')
         self.z_sum = tf.histogram_summary("z", self.z)
 
         self.G = self.generator(self.z)
@@ -81,9 +79,6 @@ class T1Generator(object):
         self.z_seeds = self._seeder()
 
     def train(self, config):
-        data_files = glob(os.path.join(config.dataset, config.anatomical_template))
-        assert len(data_files) >= self.batch_size
-
         counter = tf.Variable(0, name='counter', trainable=False)
 
         g_optim = tf.train.AdamOptimizer(
@@ -96,30 +91,29 @@ class T1Generator(object):
         self.writer = tf.train.SummaryWriter(self.log_dir, self.sess.graph)
 
         start_time = time.time()
-        self.load()
+        self.load_checkpoint()
 
         epoch = 0
         n_visuals = 0
         # if n_epochs is not specified, go forever; else do it n_epochs times
         while config.n_epochs is None or epoch < config.n_epochs:
-            n_batches = len(data_files) // self.batch_size
-            for batch in xrange(n_batches):
-                batch_files = data_files[batch * self.batch_size:(batch + 1) * self.batch_size]
-                batch_data = [imageio.get_nifti_image(batch_file, self.image_dims[0])
-                         for batch_file in batch_files]
-                batch_images = np.array(batch_data).astype(np.float32)
+            t1_epi_files = imageio.get_t1_epi_files(config.dataset)
 
-                batch_z_seeds = self._seeder()
+            for t1_file, epi_files in t1_epi_files.items():
+                t1_data = imageio.get_nifti_image(t1_file, self.t1_dims[0])
+                epi_data = [imageio.get_nifti_image(epi_file, self.EPI_DIMS[0],
+                            for epi_file in epi_files]
+                epi_data = np.array(epi_data).astype(np.float32)
 
                 # update network
                 _, summary_str = self.sess.run([g_optim, self.g_sum],
-                                               feed_dict={self.z: batch_z_seeds})
+                                               feed_dict={self.z: epi_data})
                 self.writer.add_summary(summary_str, epoch)
 
-                errG = self.g_loss.eval({self.z: batch_z_seeds})
+                errG = self.g_loss.eval({self.z: epi_data}) # ???
 
-                print("Epoch: [%2d] [%4d/%4d] time: %4.4f, g_loss: %.8f"
-                      % (epoch, batch + 1, n_batches, time.time() - start_time, errG))
+                print("Epoch: [%2d] time: %4.4f, g_loss: %.8f"
+                      % (epoch, time.time() - start_time, errG))
 
                 if np.power(self.SAVE_VISUALS_EXP, n_visuals) <= epoch:
                     # save visuals in the visuals dir at an ever-decreasing rate
@@ -189,7 +183,7 @@ class T1Generator(object):
             os.path.join(self.checkpoint_dir, self.model_name),
             global_step=counter)
 
-    def load(self):
+    def load_checkpoint(self):
         print(" [*] Reading checkpoints...")
 
         ckpt = tf.train.get_checkpoint_state(self.checkpoint_dir)

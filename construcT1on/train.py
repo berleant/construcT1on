@@ -15,7 +15,7 @@ def main():
     flags.DEFINE_float("beta1", 0.5, "Momentum term of adam")
     flags.DEFINE_integer("batch_size", 64, "The size of batch images")
     flags.DEFINE_integer("image_side_length", 128, "The side length of image to use")
-    flags.DEFINE_string("dataset", "/scratch/PI/russpold/data/HCP", "Dataset directory.")
+    flags.DEFINE_string("dataset", "/scratch/PI/russpold/data/HCP/Disk1of5", "Dataset directory.")
     flags.DEFINE_string("checkpoint_dir", "checkpoint", "Directory name to save the checkpoints")
     flags.DEFINE_string("visuals_dir", "visuals", "Directory name to save the visuals")
     flags.DEFINE_string("anatomical_template", "Disk1of5/*/MNINonLinear/T1w_restore.2.nii.gz",
